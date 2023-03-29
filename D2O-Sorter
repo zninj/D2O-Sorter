@@ -1,0 +1,186 @@
+file=xlsread('Insert Excel File Name')
+%file=readtable([namesave{po} '.txt'],'Delimiter', '	'); 
+
+
+%Parameters
+error1=0.1;% 
+RTerror=.08; %0.08mins, allowed retention time error/dalton 
+MinAbund=0; %Minimum allowed abundance
+ratio1toM=0.09;
+ratio2to1=0.01;
+
+if(individual==true)
+%file=file(3:end,[2,3,7]);
+%file(:,[1 2])=file(:,[2 1]); 
+mzdata=[];
+mzdata(:,1:3)=file(:,1:3);
+mzdata=sortrows(mzdata,1);%Sorts the m/z's into rention time order and matches them with their according intensity value
+elseif(individual==false)
+file=table2array((file(4:end,[2,3,27])))
+file(:,[1 2 3])=file(:,[2 1 3])
+mzdata=[];
+mzdata(:,1:3)=cell2mat(file(:,1:3));
+mzdata=sortrows(mzdata,1)
+end
+
+%For Specific Searching
+if(true)
+mzlimit=[400,500];
+rtlimit=[33,37];
+mzdata(mzdata(:,1)>mzlimit(2),:)=[];
+mzdata(mzdata(:,1)<mzlimit(1),:)=[];
+mzdata(mzdata(:,2)>rtlimit(2),:)=[];
+mzdata(mzdata(:,2)<rtlimit(1),:)=[];
+end
+
+%MZ Isotope Sort
+
+mzlist=zeros(60,length(mzdata));
+abundancelist=zeros(60,length(mzdata));
+rtlist=zeros(60,length(mzdata));
+
+ for sw=1:length(mzdata);%
+      mztemp=zeros(45,1);
+      abundtemp=zeros(45,1);
+      rttemp=zeros(45,1);
+    
+      mztemp(1,1)=mzdata(sw,1);
+      abundtemp(1,1)=mzdata(sw,3);
+      rttemp(1,1)=mzdata(sw,2);
+      
+      error=error1; %%gives a ppm error range
+        
+               
+         rtdiff=abs(mzdata(sw,2)-mzdata(:,2));
+         integerdiff=round(mzdata(:,1)-mzdata(sw,1));
+         rtmatchesself =rtdiff<RTerror*integerdiff; %& rtdiff>-.005; %makes the triangle that gives a larger range with biger integer differences
+         mzmatches = abs(mzdata(:,1)-mzdata(sw,1)- abs(1.00627*round(mzdata(:,1)-mzdata(sw,1))))<error & mzdata(:,1)-mzdata(sw,1)<10;   
+         
+    %Here we want to ensure that the M has a viable M+1 and M+2 before it gets sorted with our higher order ones.      
+         abund1match=((mzdata(:,3).*(integerdiff==1)))>0;
+         correctabund1match=abund1match&mzmatches&rtmatchesself;
+         abund2match=((mzdata(:,3).*(integerdiff==2)))>0;
+         correctabund2match=abund2match&mzmatches&rtmatchesself;
+    
+     abundboth=any(correctabund1match)&any(correctabund2match);
+    
+        if(abundboth)
+        up1=find(correctabund1match&rtmatchesself,1);
+        mida1=rtmatchesself(sw+1:up1-1);
+        up2=find(correctabund2match&rtmatchesself,1);
+        mida2=rtmatchesself(up1+1:up2-1,1);
+        midders=any(mida1)&any(mida2); 
+        else
+        midders=0;
+        end
+        
+        % if()
+       % mids1=mzdata(mzdata(:,1)<up1(1)&mzdata(:,1)>mzdata(sw,1),:)-mzdata(sw,1); %These lines produce comparable values between 0-1 for us to compare fragments
+       % mids2=mzdata(mzdata(:,1)<up2(1)&mzdata(:,1)>up1(1),:)-up1(1);
+       % mids3=mzdata(mzdata(:,1)<up3(1)&mzdata(:,1)>up2(1),:)-up2(1);
+       % end
+       % end 
+         
+         
+       
+         all=rtmatchesself&mzmatches;
+         
+      if(any(mzdata(all,2)~=mzdata(sw,2)))
+         tooperfect=false;
+      else
+         tooperfect=true;
+      end
+
+      
+         if(any(all)&abundboth&~midders&~tooperfect) %accounts for xcms fuck-ups and averages in rt/mz based on abundance and adds abundances            
+                
+                position=round(mzdata(all,1)-mzdata(sw,1));
+                mztemp(position+1,1)=mzdata(all,1);
+                rttemp(position+1,1)=mzdata(all,2);
+                abundtemp(position+1,1)=mzdata(all,3);
+                mzdata(all,:)=0;                
+         end       
+         
+        mzlist(1:length(mztemp),sw)=mztemp;
+        abundancelist(1:length(abundtemp),sw)=abundtemp;
+        rtlist(1:length(rttemp),sw)=rttemp;  
+        
+ end
+
+
+       %This portion removes all of the zeros from the code
+
+%gets rid of rows with all zeros 
+abundancelist(~any(mzlist,2),:)=[];
+rtlist(~any(mzlist,2),:)=[];
+mzlist(~any(mzlist,2),:)=[];
+
+abundancelist(:,~any(mzlist,1))=[];  %gets rid of columns with any zeros
+rtlist(:,~any(mzlist,1))=[];  
+mzlist(:,~any(mzlist,1))=[];   
+
+
+ % with all the values that made it past retention time
+%correction stuff
+AAA=[];
+if(size(mzlist,1)>1)
+AAA(:,1)=mzlist(1,:)';
+AAA(:,2)=sum(mzlist~=0,1)';
+AAA(:,3)=rtlist(1,:)'; %averages their two retention times for display
+AAA(:,4)=abundancelist(1,:)'; %averages abundances for display
+AAA(:,5)=(abundancelist(2,:))';
+AAA(:,6)=(abundancelist(3,:))';
+if(size(abundancelist,1)>3)
+AAA(:,7)=(abundancelist(4,:))';
+end
+%AAA(:,8)=(abundancelist(5,:))';
+AAA(:,8)=AAA(:,4)./AAA(:,4);
+AAA(:,9)=AAA(:,5)./AAA(:,4);
+AAA(:,10)=AAA(:,6)./AAA(:,4);
+AAA(:,11)=AAA(:,7)./AAA(:,4);
+
+AAA(:,15)=sum(abundancelist(1:end,:))';
+AAA(:,16)=0.00078254.*AAA(:,1)+1*0.0476934;
+AAA(:,17)=0.000000287705706*(AAA(:,1).^2)+0.000039169586817*AAA(:,1)+1*0.001723397268419;
+AAA(:,18)=0.00115025.*AAA(:,1)+1*2.3113929;
+AAA(:,19)=-0.000001637010966*(AAA(:,1).^2)+0.008100842649*AAA(:,1)+1*2.087517543739501;
+
+AAA(AAA(:,2)<2,:)=[]; %removes all samples outside of abundance range
+
+else
+AAA=[]
+end
+
+
+% Applies Formula Removals (using my max molecular formula predictor)
+  min=(AAA(:,5)./AAA(:,4))<AAA(:,16)|(AAA(:,6)./AAA(:,4))<AAA(:,17);
+  %min=(AAA(:,5)./AAA(:,4))<realistic*peaktempsmin(:,2)|(AAA(:,6)./AAA(:,4))<realistic*peaktempsmin(:,3)|(AAA(:,7)./AAA(:,4))<realistic*peaktempsmin(:,4);
+  max=(AAA(:,5)./AAA(:,4))>AAA(:,18)|(AAA(:,6)./AAA(:,4))>AAA(:,19);
+  %max=AAA(:,6)>1.1*peaktempsmax(:,2)|AAA(:,7)>1.1*peaktempsmax(:,3)|AAA(:,8)>1.1*peaktempsmax(:,4)|AAA(:,9)>1.1*peaktempsmax(:,5)
+
+ 
+ 
+eval(['AAA_' namesave{po} '=AAA']);
+eval(['AA_fake_' namesave{po} '=AA_fake']);
+eval(['AA_real_' namesave{po} '=AA_real']);
+eval([namesave{po} '_results={AA_fake_' namesave{po} ', AA_real_' namesave{po} ', AAA_' namesave{po} ', peaktempsmin}' ])  
+
+eval(['save ' namesave{po} '_results ' namesave{po} '_results'])
+
+namesave{po}
+
+end
+%% Table
+for poq=1
+%Makes an actual table
+r={'M','# ++', '# 1-3', 'RT','Abundance M','Abund M+1/M','Abund M+2/M+1','RT slope','R^2'};
+f=figure('position',[600 800 300 500],'units','normalized','outerposition',[0 0 1 1]);
+uitable(f,'data',AAA,'columnname',r,'position',[0 0 700 600],'ColumnWidth', 'auto')
+
+toc;
+end
+
+
+
+
+
